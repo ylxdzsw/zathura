@@ -394,3 +394,13 @@ girara_list_t* zathura_page_get_signatures(zathura_page_t* page, zathura_error_t
 
   return ret;
 }
+int
+zathura_page_get_region(zathura_page_t* page, zathura_rectangle_t* rectangle, char* buffer)
+{
+  return snprintf(buffer, 64, "page=%d,trim=%.2fbp %.2fbp %.2fbp %.2fbp,clip",
+                  page->index + 1,
+                  rectangle->x1,
+                  page->height - rectangle->y2,
+                  page->width - rectangle->x2,
+                  rectangle->y1);
+}

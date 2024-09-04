@@ -52,6 +52,7 @@ typedef struct zathura_page_widget_private_s {
   struct {
     zathura_rectangle_t selection; /**< x1 y1: click point, x2 y2: current position */
     gboolean over_link;
+    gboolean draw_region; /** Draw the bounding rectangle of selection instead of around selected text */
   } mouse;
 
   struct {
@@ -708,11 +709,17 @@ static gboolean zathura_page_widget_draw(GtkWidget* widget, cairo_t* cairo) {
     if (priv->selection.list != NULL && priv->selection.draw == true) {
       const GdkRGBA color = priv->zathura->ui.colors.highlight_color;
       cairo_set_source_rgba(cairo, color.red, color.green, color.blue, color.alpha);
-      for (size_t idx = 0; idx != girara_list_size(priv->selection.list); ++idx) {
-        zathura_rectangle_t* rect     = girara_list_nth(priv->selection.list, idx);
-        zathura_rectangle_t rectangle = recalc_rectangle(priv->page, *rect);
-        cairo_rectangle(cairo, rectangle.x1, rectangle.y1, rectangle.x2 - rectangle.x1, rectangle.y2 - rectangle.y1);
+      if (priv->mouse.draw_region) {
+        cairo_rectangle(cairo, priv->mouse.selection.x1, priv->mouse.selection.y1,
+                        (priv->mouse.selection.x2 - priv->mouse.selection.x1), (priv->mouse.selection.y2 - priv->mouse.selection.y1));
         cairo_fill(cairo);
+      } else {
+        for (size_t idx = 0; idx != girara_list_size(priv->selection.list); ++idx) {
+          zathura_rectangle_t* rect     = girara_list_nth(priv->selection.list, idx);
+          zathura_rectangle_t rectangle = recalc_rectangle(priv->page, *rect);
+          cairo_rectangle(cairo, rectangle.x1, rectangle.y1, rectangle.x2 - rectangle.x1, rectangle.y2 - rectangle.y1);
+          cairo_fill(cairo);
+        }
       }
     }
     if (priv->highlighter.bounds.x1 != -1 && priv->highlighter.bounds.y1 != -1 && priv->highlighter.draw == true) {
@@ -1026,12 +1033,16 @@ static gboolean cb_zathura_page_widget_button_press_event(GtkWidget* widget, Gdk
       priv->mouse.selection.x2 = x;
       priv->mouse.selection.y2 = y;
 
+      if (button->state & GDK_CONTROL_MASK)
+        priv->mouse.draw_region = true;
     } else if (button->type == GDK_2BUTTON_PRESS || button->type == GDK_3BUTTON_PRESS) {
       /* abort the selection */
       priv->mouse.selection.x1 = -1;
       priv->mouse.selection.y1 = -1;
       priv->mouse.selection.x2 = -1;
       priv->mouse.selection.y2 = -1;
+
+      priv->mouse.draw_region = false;
     }
 
     return true;
@@ -1087,20 +1098,38 @@ static gboolean cb_zathura_page_widget_button_release_event(GtkWidget* widget, G
     tmp.y1 /= scale;
     tmp.y2 /= scale;
 
-    char* text = zathura_page_get_text(priv->page, tmp, NULL);
-    if (text != NULL && *text != '\0') {
-      /* emit text-selected signal */
-      g_signal_emit(page, signals[TEXT_SELECTED], 0, text);
-    } else if (priv->zathura->global.double_click_follow == false) {
-      evaluate_link_at_mouse_position(page, oldx, oldy);
+    if (priv->mouse.draw_region) {
+      /* region selection */
+      redraw_rect(page, &priv->mouse.selection);
+
+      /* avoid the text selection */
+      if (priv->selection.list != NULL) {
+        girara_list_free(priv->selection.list);
+        priv->selection.list = NULL;
+      }
+
+      char text[64] = { 0 };
+      int n = zathura_page_get_region(priv->page, &tmp, (char*) text);
+      if (n > 0 && n < 63)
+        g_signal_emit(ZATHURA_PAGE(widget), signals[TEXT_SELECTED], 0, (char*) text);
+    } else {
+      char* text = zathura_page_get_text(priv->page, tmp, NULL);
+      if (text != NULL && *text != '\0') {
+        /* emit text-selected signal */
+        g_signal_emit(page, signals[TEXT_SELECTED], 0, text);
+      } else if (priv->zathura->global.double_click_follow == false) {
+        evaluate_link_at_mouse_position(page, oldx, oldy);
+      }
+      g_free(text);
     }
-    g_free(text);
   }
 
   priv->mouse.selection.x1 = -1;
   priv->mouse.selection.y1 = -1;
   priv->mouse.selection.x2 = -1;
   priv->mouse.selection.y2 = -1;
+
+  priv->mouse.draw_region = false;
 
   return false;
 }

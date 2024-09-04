@@ -246,4 +246,6 @@ ZATHURA_PLUGIN_API bool zathura_page_label_is_number(zathura_page_t* page);
  */
 ZATHURA_PLUGIN_API girara_list_t* zathura_page_get_signatures(zathura_page_t* page, zathura_error_t* error);
 
+int zathura_page_get_region(zathura_page_t* page, zathura_rectangle_t* rect, char* buffer);
+
 #endif // PAGE_H
